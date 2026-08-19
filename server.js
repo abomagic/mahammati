@@ -12,13 +12,7 @@ const PORT = Number(process.env.PORT || 3000);
 const CURRENCY = process.env.CURRENCY || "EGP";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@example.com";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "ChangeMe123!";
-const PAYMOB_BASE_URL = process.env.PAYMOB_BASE_URL || "https://accept.paymob.com";
-const PAYMOB_SECRET_KEY = process.env.PAYMOB_SECRET_KEY || "";
-const PAYMOB_PUBLIC_KEY = process.env.PAYMOB_PUBLIC_KEY || "";
-const PAYMOB_HMAC_SECRET = process.env.PAYMOB_HMAC_SECRET || "";
-const PAYMOB_PAYMENT_METHOD_IDS = String(process.env.PAYMOB_PAYMENT_METHOD_IDS || "")
-  .split(",").map(x => Number(x.trim())).filter(Number.isInteger);
-const APP_BASE_URL = String(process.env.APP_BASE_URL || "").replace(/\/$/, "");
+const ETISALAT_CASH_NUMBER = String(process.env.ETISALAT_CASH_NUMBER || "01125663123").trim();
 
 app.use(express.json({ limit: "256kb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -115,6 +109,8 @@ function ensureColumn(table, column, definition){
 }
 ensureColumn("users","vip_level","INTEGER NOT NULL DEFAULT 0");
 ensureColumn("users","vip_updated_at","TEXT");
+ensureColumn("vip_orders","sender_phone","TEXT");
+ensureColumn("vip_orders","cash_reference","TEXT");
 
 function seedVipPlans(){
   const insert = db.prepare("INSERT OR IGNORE INTO vip_plans(level,name,price_piasters,badge_color,active) VALUES(?,?,?,?,1)");
@@ -249,89 +245,47 @@ app.get("/api/my-withdrawals",auth,(req,res)=>{
 
 // VIP public API
 app.get("/api/vip/plans",auth,(req,res)=>{
-  res.json({plans:db.prepare("SELECT level,name,price_piasters,badge_color FROM vip_plans WHERE active=1 ORDER BY level").all(),current_level:req.user.vip_level||0,
-    paymob_ready:Boolean(PAYMOB_SECRET_KEY&&PAYMOB_PUBLIC_KEY&&PAYMOB_PAYMENT_METHOD_IDS.length&&APP_BASE_URL)});
+  res.json({
+    plans:db.prepare("SELECT level,name,price_piasters,badge_color FROM vip_plans WHERE active=1 ORDER BY level").all(),
+    current_level:req.user.vip_level||0,
+    etisalat_cash_number:ETISALAT_CASH_NUMBER,
+    cash_ready:Boolean(ETISALAT_CASH_NUMBER)
+  });
 });
-app.post("/api/vip/checkout",auth,async(req,res)=>{
+
+app.get("/api/vip/my-orders",auth,(req,res)=>{
+  const orders=db.prepare(`SELECT o.id,o.plan_level,o.amount_piasters,o.status,o.created_at,o.paid_at,o.sender_phone,o.cash_reference,p.name plan_name
+    FROM vip_orders o JOIN vip_plans p ON p.level=o.plan_level
+    WHERE o.user_id=? ORDER BY o.id DESC LIMIT 30`).all(req.user.id);
+  res.json({orders});
+});
+
+app.post("/api/vip/cash-order",auth,(req,res)=>{
   const level=Number(req.body.level);
-  const fullName=String(req.body.full_name||"").trim();
-  const phone=String(req.body.phone||"").trim();
+  const senderPhone=String(req.body.sender_phone||"").trim();
+  const cashReference=String(req.body.cash_reference||"").trim();
   const plan=db.prepare("SELECT * FROM vip_plans WHERE level=? AND active=1").get(level);
+
   if(!plan) return res.status(404).json({error:"خطة VIP غير موجودة"});
   if(level <= (req.user.vip_level||0)) return res.status(400).json({error:"اختر VIP أعلى من مستواك الحالي"});
-  if(fullName.length<2 || phone.length<7) return res.status(400).json({error:"اكتب الاسم ورقم الهاتف لإتمام الدفع"});
-  if(!PAYMOB_SECRET_KEY || !PAYMOB_PUBLIC_KEY || !PAYMOB_PAYMENT_METHOD_IDS.length || !APP_BASE_URL)
-    return res.status(503).json({error:"بوابة الشحن التلقائي لم تُربط بعد. أضف مفاتيح Paymob في Railway."});
+  if(!ETISALAT_CASH_NUMBER) return res.status(503).json({error:"محفظة اتصالات كاش غير مضبوطة بعد"});
+  if(senderPhone.length<8 || senderPhone.length>20) return res.status(400).json({error:"اكتب رقم الموبايل الذي تم التحويل منه"});
+  if(cashReference.length<4 || cashReference.length>80) return res.status(400).json({error:"اكتب رقم/مرجع عملية التحويل"});
 
-  const ref=`VIP-${Date.now()}-${crypto.randomBytes(5).toString("hex")}`;
-  const info=db.prepare("INSERT INTO vip_orders(user_id,plan_level,amount_piasters,special_reference) VALUES(?,?,?,?)")
-    .run(req.user.id,level,plan.price_piasters,ref);
-  const orderId=Number(info.lastInsertRowid);
-  const parts=fullName.split(/\s+/);
-  const firstName=parts.shift()||"Customer";
-  const lastName=parts.join(" ")||"User";
-  const payload={
-    amount:plan.price_piasters,
-    currency:CURRENCY,
-    payment_methods:PAYMOB_PAYMENT_METHOD_IDS,
-    items:[{name:plan.name,amount:plan.price_piasters,description:`Mahammati ${plan.name}`,quantity:1}],
-    billing_data:{first_name:firstName,last_name:lastName,email:req.user.email,phone_number:phone,apartment:"NA",building:"NA",street:"NA",floor:"NA",city:"Cairo",state:"Cairo",country:"EGY"},
-    special_reference:ref,
-    notification_url:`${APP_BASE_URL}/api/paymob/webhook`,
-    redirection_url:`${APP_BASE_URL}/?vip_payment=return`,
-    expiration:3600
-  };
-  try{
-    const r=await fetch(`${PAYMOB_BASE_URL}/v1/intention/`,{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Token ${PAYMOB_SECRET_KEY}`},body:JSON.stringify(payload)});
-    const j=await r.json().catch(()=>({}));
-    if(!r.ok || !j.client_secret){
-      db.prepare("UPDATE vip_orders SET status='failed' WHERE id=?").run(orderId);
-      return res.status(502).json({error:"تعذر بدء عملية الدفع",provider_error:j});
-    }
-    db.prepare("UPDATE vip_orders SET provider_order_id=?,client_secret=? WHERE id=?").run(String(j.intention_order_id||""),j.client_secret,orderId);
-    const checkout=`${PAYMOB_BASE_URL}/unifiedcheckout/?publicKey=${encodeURIComponent(PAYMOB_PUBLIC_KEY)}&clientSecret=${encodeURIComponent(j.client_secret)}`;
-    res.json({ok:true,checkout_url:checkout,order_id:orderId});
-  }catch(e){
-    db.prepare("UPDATE vip_orders SET status='failed' WHERE id=?").run(orderId);
-    res.status(502).json({error:"تعذر الاتصال ببوابة الدفع"});
-  }
-});
+  const duplicate=db.prepare("SELECT id FROM vip_orders WHERE cash_reference=? OR provider_transaction_id=?").get(cashReference,cashReference);
+  if(duplicate) return res.status(409).json({error:"مرجع التحويل مستخدم من قبل"});
 
-function paymobValue(v){ if(v===true)return "true"; if(v===false)return "false"; if(v===null||v===undefined)return ""; return String(v); }
-function verifyPaymobHmac(obj, received){
-  if(!PAYMOB_HMAC_SECRET || !obj) return false;
-  const s=obj.source_data||{};
-  const values=[obj.amount_cents,obj.created_at,obj.currency,obj.error_occured,obj.has_parent_transaction,obj.id,obj.integration_id,
-    obj.is_3d_secure,obj.is_auth,obj.is_capture,obj.is_refunded,obj.is_standalone_payment,obj.is_voided,obj.order?.id,obj.owner,obj.pending,
-    s.pan,s.sub_type,s.type,obj.success];
-  const signed=values.map(paymobValue).join("");
-  const expected=crypto.createHmac("sha512",PAYMOB_HMAC_SECRET).update(signed).digest("hex");
-  try{
-    const a=Buffer.from(expected,"utf8"), b=Buffer.from(String(received||""),"utf8");
-    return a.length===b.length && crypto.timingSafeEqual(a,b);
-  }catch{return false;}
-}
-app.post("/api/paymob/webhook",(req,res)=>{
-  const obj=req.body?.obj;
-  if(!verifyPaymobHmac(obj,req.query.hmac)) return res.status(401).send("bad hmac");
-  const merchantRef=String(obj?.order?.merchant_order_id || obj?.merchant_order_id || "");
-  const order=db.prepare("SELECT * FROM vip_orders WHERE special_reference=?").get(merchantRef);
-  if(!order) return res.status(200).send("ignored");
-  if(order.status==="paid") return res.status(200).send("ok");
-  const succeeded=obj.success===true && obj.pending===false && obj.error_occured===false && obj.is_refunded===false && obj.is_voided===false;
-  if(!succeeded){
-    if(obj.pending===false) db.prepare("UPDATE vip_orders SET status='failed' WHERE id=?").run(order.id);
-    return res.status(200).send("ok");
-  }
-  if(Number(obj.amount_cents)!==order.amount_piasters || String(obj.currency)!==CURRENCY) return res.status(400).send("amount mismatch");
-  try{
-    db.transaction(()=>{
-      db.prepare("UPDATE vip_orders SET status='paid',provider_transaction_id=?,paid_at=CURRENT_TIMESTAMP WHERE id=? AND status!='paid'")
-        .run(String(obj.id),order.id);
-      db.prepare("UPDATE users SET vip_level=?,vip_updated_at=CURRENT_TIMESTAMP WHERE id=?").run(order.plan_level,order.user_id);
-    })();
-  }catch(e){ return res.status(200).send("ok"); }
-  res.status(200).send("ok");
+  const ref=`CASH-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
+  const info=db.prepare(`INSERT INTO vip_orders(
+      user_id,plan_level,amount_piasters,special_reference,provider,provider_transaction_id,status,sender_phone,cash_reference
+    ) VALUES(?,?,?,?,'etisalat_cash',?,'pending',?,?)`)
+    .run(req.user.id,level,plan.price_piasters,ref,cashReference,senderPhone,cashReference);
+
+  res.json({
+    ok:true,
+    order_id:info.lastInsertRowid,
+    message:"تم إرسال طلب شحن VIP للمراجعة. بعد التأكد من وصول التحويل سيتم تفعيل المستوى."
+  });
 });
 
 // Admin
@@ -405,6 +359,29 @@ app.put("/api/admin/users/:id/vip",admin,(req,res)=>{
   if(level>0 && !db.prepare("SELECT 1 FROM vip_plans WHERE level=?").get(level)) return res.status(400).json({error:"خطة VIP غير موجودة"});
   const info=db.prepare("UPDATE users SET vip_level=?,vip_updated_at=CURRENT_TIMESTAMP WHERE id=? AND role!='admin'").run(level,userId);
   if(!info.changes) return res.status(404).json({error:"المستخدم غير موجود"});
+  res.json({ok:true});
+});
+
+
+app.post("/api/admin/vip/orders/:id/approve",admin,(req,res)=>{
+  const id=Number(req.params.id);
+  const order=db.prepare("SELECT * FROM vip_orders WHERE id=?").get(id);
+  if(!order || order.status!=="pending") return res.status(404).json({error:"طلب الشحن غير متاح"});
+  const plan=db.prepare("SELECT * FROM vip_plans WHERE level=?").get(order.plan_level);
+  if(!plan) return res.status(400).json({error:"خطة VIP غير موجودة"});
+
+  db.transaction(()=>{
+    db.prepare("UPDATE vip_orders SET status='paid',paid_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").run(id);
+    db.prepare("UPDATE users SET vip_level=?,vip_updated_at=CURRENT_TIMESTAMP WHERE id=?").run(order.plan_level,order.user_id);
+  })();
+  res.json({ok:true});
+});
+
+app.post("/api/admin/vip/orders/:id/reject",admin,(req,res)=>{
+  const id=Number(req.params.id);
+  const order=db.prepare("SELECT * FROM vip_orders WHERE id=?").get(id);
+  if(!order || order.status!=="pending") return res.status(404).json({error:"طلب الشحن غير متاح"});
+  db.prepare("UPDATE vip_orders SET status='rejected' WHERE id=?").run(id);
   res.json({ok:true});
 });
 
