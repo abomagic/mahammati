@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مهمّتي | مهام صغيرة بمقابل حقيقي</title>
+<style>
+:root{--bg:#09111e;--card:#111c2d;--soft:#17253a;--txt:#f5f7fb;--muted:#9caac0;--a:#6e60ff;--g:#22c995;--r:#ff7083;--line:#26364e}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(150deg,#08111f,#0c1524 55%,#10142a);color:var(--txt);font-family:Tahoma,Arial,sans-serif;min-height:100vh}
+.wrap{max-width:1120px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:24px}.brand{font-size:24px;font-weight:900}.brand span{background:linear-gradient(135deg,var(--a),var(--g));padding:9px 12px;border-radius:14px;margin-left:8px}
+.badge{background:#caffef;color:#062119;padding:7px 10px;border-radius:99px;font-size:12px;font-weight:900}
+.card{background:rgba(17,28,45,.94);border:1px solid var(--line);border-radius:22px;padding:20px;box-shadow:0 18px 50px #0005}
+.grid{display:grid;grid-template-columns:310px 1fr;gap:18px}.hidden{display:none!important}h1,h2,h3,p{margin-top:0}.muted{color:var(--muted)}
+input,textarea,select,button{font:inherit}input,textarea,select{width:100%;background:#0b1525;color:white;border:1px solid var(--line);border-radius:13px;padding:12px;margin:5px 0 10px}
+textarea{min-height:90px;resize:vertical}button{border:0;border-radius:13px;padding:11px 14px;background:linear-gradient(135deg,var(--a),#9389ff);color:white;font-weight:900;cursor:pointer}
+button.alt{background:var(--soft)}button.ok{background:var(--g);color:#03251b}button.bad{background:#3d1d27;color:#ffb1bb}.row{display:flex;gap:8px;flex-wrap:wrap}.row>*{flex:1}
+.hero{padding:30px}.hero h1{font-size:38px;line-height:1.2}.notice{padding:13px;border-radius:14px;background:#18253a;border:1px solid #2a405f;margin-bottom:18px}
+.wallet{background:linear-gradient(135deg,#24235a,#143c3e);padding:18px;border-radius:18px;margin:14px 0}.money{font-size:32px;font-weight:900}
+.task{background:#0c1728;border:1px solid var(--line);padding:17px;border-radius:17px;margin:11px 0}.taskTop{display:flex;justify-content:space-between;gap:15px}.price{color:#88f2d1;font-weight:900;white-space:nowrap}
+.small{font-size:12px}.tabs{display:flex;gap:8px;margin-bottom:15px}.tabs button{background:var(--soft)}.tabs button.on{background:var(--a)}
+.adminbox{border-top:1px solid var(--line);margin-top:18px;padding-top:18px}.status{display:inline-block;padding:4px 8px;border-radius:99px;background:#1b2b42;font-size:12px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.hero h1{font-size:30px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div class="brand"><span>✓</span>مهمّتي</div><div class="badge">مهام حقيقية • دفع بعد المراجعة</div></div>
+
+  <div id="auth" class="grid">
+    <div class="card">
+      <h2>دخول</h2>
+      <input id="email" type="email" placeholder="البريد الإلكتروني">
+      <input id="password" type="password" placeholder="كلمة المرور">
+      <div class="row"><button onclick="login()">دخول</button><button class="alt" onclick="register()">حساب جديد</button></div>
+      <p id="authMsg" class="small muted" style="margin-top:10px"></p>
+    </div>
+    <div class="card hero">
+      <h1>مهام صغيرة. أسعار صغيرة. فلوس حقيقية بعد اعتماد الشغل 💸</h1>
+      <p class="muted">كل مستخدم له حساب ومحفظة. المهمة تُرسل للمراجعة، وبعد قبولها تدخل المكافأة في الرصيد المتاح للسحب.</p>
+      <div class="notice">لا يوجد “ربح وهمي”: أي رصيد يُضاف هنا يجب أن يقابله عمل مقبول وأموال حقيقية ممولة من مالك المنصة.</div>
+    </div>
+  </div>
+
+  <div id="app" class="grid hidden">
+    <aside class="card">
+      <h3 id="who"></h3>
+      <div class="wallet"><div class="small muted">الرصيد المتاح</div><div class="money"><span id="balance">0.00</span> <small>EGP</small></div><div class="small muted">محجوز للسحب: <span id="held">0.00</span></div></div>
+      <button class="alt" style="width:100%;margin-bottom:8px" onclick="showTab('tasks')">🎯 المهام</button>
+      <button class="alt" style="width:100%;margin-bottom:8px" onclick="showTab('withdraw')">💳 السحب</button>
+      <button id="adminBtn" class="alt hidden" style="width:100%;margin-bottom:8px" onclick="showTab('admin')">🛠 الإدارة</button>
+      <button class="bad" style="width:100%" onclick="logout()">خروج</button>
+    </aside>
+
+    <main>
+      <section id="tasksTab" class="card">
+        <h2>المهام المتاحة</h2><p class="muted">الأسعار منخفضة عمدًا، والمكافأة لا تُضاف إلا بعد مراجعة الإجابة.</p>
+        <div id="tasks"></div>
+      </section>
+
+      <section id="withdrawTab" class="card hidden">
+        <h2>السحب الحقيقي</h2>
+        <p class="muted">احفظ وسيلة الاستلام، ثم افتح طلب سحب. المبلغ ينتقل من “متاح” إلى “محجوز” حتى يتم التحويل.</p>
+        <label>وسيلة السحب</label>
+        <select id="method"><option value="instapay">InstaPay</option><option value="wallet">محفظة موبايل</option><option value="bank">حساب بنكي / IBAN</option><option value="paypal">PayPal</option></select>
+        <label>بيانات الاستلام</label><input id="details" placeholder="عنوان InstaPay أو رقم المحفظة أو IBAN...">
+        <button class="alt" onclick="savePayout()">حفظ بيانات السحب</button>
+        <hr style="border-color:#26364e;margin:20px 0">
+        <label>المبلغ بالجنيه</label><input id="amount" type="number" min="1" step=".01" placeholder="20.00">
+        <button onclick="withdraw()">طلب سحب</button>
+        <p id="withdrawMsg" class="small muted" style="margin-top:10px"></p>
+        <div id="withdrawals"></div>
+      </section>
+
+      <section id="adminTab" class="card hidden">
+        <h2>لوحة الإدارة</h2>
+        <div class="notice">اعتمد فقط العمل الصحيح. وعند السحب: نفّذ التحويل المالي فعلًا عبر البنك/المحفظة/مزوّد الدفع، ثم ضع رقم مرجع التحويل واضغط “تم الدفع”.</div>
+        <div class="adminbox">
+          <h3>إضافة مهمة حقيقية</h3>
+          <input id="newTitle" placeholder="عنوان المهمة"><textarea id="newDesc" placeholder="تعليمات واضحة للمهمة"></textarea>
+          <div class="row"><input id="newReward" type="number" step=".01" placeholder="السعر EGP"><input id="newSlots" type="number" placeholder="عدد المنفذين"></div>
+          <button onclick="addTask()">نشر المهمة</button>
+        </div>
+        <div class="adminbox"><h3>مراجعة الأعمال</h3><div id="reviewQueue"></div></div>
+        <div class="adminbox"><h3>طلبات السحب</h3><div id="payQueue"></div></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+let token=localStorage.getItem("token")||"", me=null;
+const money=p=>(p/100).toFixed(2);
+async function api(url,opts={}){
+  opts.headers={...(opts.headers||{}),"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})};
+  const r=await fetch(url,opts); const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||"حدث خطأ"); return j;
+}
+async function register(){
+  try{let j=await api("/api/register",{method:"POST",body:JSON.stringify({email:email.value,password:password.value})});token=j.token;localStorage.setItem("token",token);boot()}
+  catch(e){authMsg.textContent=e.message}
+}
+async function login(){
+  try{let j=await api("/api/login",{method:"POST",body:JSON.stringify({email:email.value,password:password.value})});token=j.token;localStorage.setItem("token",token);boot()}
+  catch(e){authMsg.textContent=e.message}
+}
+function logout(){localStorage.removeItem("token");token="";location.reload()}
+async function boot(){
+  if(!token)return;
+  try{
+    const j=await api("/api/me");me=j.user;
+    auth.classList.add("hidden");app.classList.remove("hidden");
+    who.textContent=me.email;balance.textContent=money(me.balance_piasters);held.textContent=money(me.held_piasters);
+    method.value=me.payout_method||"instapay";details.value=me.payout_details||"";
+    if(me.role==="admin")adminBtn.classList.remove("hidden");
+    loadTasks();loadWithdrawals();
+  }catch{logout()}
+}
+function showTab(name){
+  tasksTab.classList.toggle("hidden",name!=="tasks");
+  withdrawTab.classList.toggle("hidden",name!=="withdraw");
+  adminTab.classList.toggle("hidden",name!=="admin");
+  if(name==="admin")loadAdmin();
+  if(name==="withdraw")loadWithdrawals();
+}
+async function loadTasks(){
+  let j=await api("/api/tasks");tasks.innerHTML="";
+  j.tasks.forEach(t=>{
+    const d=document.createElement("div");d.className="task";
+    d.innerHTML=`<div class="taskTop"><div><h3>${esc(t.title)}</h3><p class="muted">${esc(t.description)}</p></div><div class="price">${money(t.reward_piasters)} EGP</div></div>
+      ${t.my_status?`<span class="status">الحالة: ${esc(t.my_status)}</span>`:`<textarea placeholder="اكتب نتيجة تنفيذ المهمة هنا"></textarea><button class="ok">إرسال للمراجعة</button>`}`;
+    if(!t.my_status)d.querySelector("button").onclick=async()=>{try{await api("/api/tasks/"+t.id+"/submit",{method:"POST",body:JSON.stringify({answer:d.querySelector("textarea").value})});loadTasks()}catch(e){alert(e.message)}};
+    tasks.appendChild(d);
+  });
+}
+async function savePayout(){try{await api("/api/payout-profile",{method:"PUT",body:JSON.stringify({method:method.value,details:details.value})});withdrawMsg.textContent="تم حفظ بيانات السحب"}catch(e){withdrawMsg.textContent=e.message}}
+async function withdraw(){
+  try{
+    const p=Math.round(Number(amount.value)*100);
+    const j=await api("/api/withdrawals",{method:"POST",body:JSON.stringify({amount_piasters:p})});withdrawMsg.textContent=j.message;await boot();showTab("withdraw");
+  }catch(e){withdrawMsg.textContent=e.message}
+}
+async function loadWithdrawals(){
+  if(!token)return;let j=await api("/api/my-withdrawals");withdrawals.innerHTML="<h3 style='margin-top:18px'>سجل السحب</h3>";
+  j.withdrawals.forEach(w=>withdrawals.innerHTML+=`<div class="task"><b>${money(w.amount_piasters)} EGP</b> — <span class="status">${esc(w.status)}</span><div class="small muted">${esc(w.payout_method)} ${w.reference?"• مرجع: "+esc(w.reference):""}</div></div>`);
+}
+async function loadAdmin(){
+  let j=await api("/api/admin/queue");reviewQueue.innerHTML="";payQueue.innerHTML="";
+  j.submissions.forEach(s=>{
+    const d=document.createElement("div");d.className="task";
+    d.innerHTML=`<b>${esc(s.title)}</b> — ${money(s.reward_piasters)} EGP<div class="small muted">${esc(s.email)}</div><p>${esc(s.answer)}</p><div class="row"><button class="ok">اعتماد</button><button class="bad">رفض</button></div>`;
+    const [a,b]=d.querySelectorAll("button");a.onclick=()=>review(s.id,"approved");b.onclick=()=>review(s.id,"rejected");reviewQueue.appendChild(d);
+  });
+  j.withdrawals.forEach(w=>{
+    const d=document.createElement("div");d.className="task";
+    d.innerHTML=`<b>${money(w.amount_piasters)} EGP</b><div>${esc(w.email)}</div><div class="small muted">${esc(w.payout_method)} — ${esc(w.payout_details)}</div><input placeholder="رقم/مرجع التحويل الحقيقي"><div class="row"><button class="ok">تم الدفع</button><button class="bad">رفض وإرجاع الرصيد</button></div>`;
+    const [a,b]=d.querySelectorAll("button");a.onclick=()=>markPaid(w.id,d.querySelector("input").value);b.onclick=()=>rejectWithdrawal(w.id);payQueue.appendChild(d);
+  });
+}
+async function review(id,status){try{await api("/api/admin/submissions/"+id+"/review",{method:"POST",body:JSON.stringify({status})});loadAdmin()}catch(e){alert(e.message)}}
+async function markPaid(id,reference){try{await api("/api/admin/withdrawals/"+id+"/paid",{method:"POST",body:JSON.stringify({reference})});loadAdmin()}catch(e){alert(e.message)}}
+async function rejectWithdrawal(id){try{await api("/api/admin/withdrawals/"+id+"/reject",{method:"POST",body:"{}"});loadAdmin()}catch(e){alert(e.message)}}
+async function addTask(){
+  try{
+    await api("/api/admin/tasks",{method:"POST",body:JSON.stringify({title:newTitle.value,description:newDesc.value,reward_piasters:Math.round(Number(newReward.value)*100),slots:Number(newSlots.value)})});
+    newTitle.value=newDesc.value=newReward.value=newSlots.value="";alert("تم نشر المهمة");
+  }catch(e){alert(e.message)}
+}
+function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+boot();
+</script>
+</body>
+</html>
